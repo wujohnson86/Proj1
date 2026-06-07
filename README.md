@@ -1,16 +1,24 @@
-# Weather Agent + MCP Server (Beginner Project)
+# MCP Agent Playground (Beginner Project)
 
-Two small Python files:
+Small Python pairs of (MCP server + Claude agent), each demonstrating the
+same pattern with a different free API:
 
-- `weather_mcp_server.py` — an MCP server exposing one tool, `get_weather`,
-  backed by the OpenWeatherMap API.
-- `weather_agent.py` — a command-line agent powered by Claude that uses
-  that tool to answer weather questions.
+- `weather_mcp_server.py` / `weather_agent.py` — weather lookups via
+  OpenWeatherMap (needs a free API key).
+- `crypto_mcp_server.py` / `crypto_agent.py` — cryptocurrency prices via
+  CoinGecko (no API key needed at all).
+- `news_mcp_server.py` / `news_agent.py` — news headlines via NewsAPI.org
+  (needs a free API key).
+
+Each "agent" file is the one you run — it automatically launches its
+matching "server" file as a subprocess and talks to it over MCP.
 
 ## 1. Get your API keys ready
 
 - Anthropic API key: https://console.anthropic.com/
-- OpenWeatherMap API key (free tier is fine): https://openweathermap.org/api
+- OpenWeatherMap API key (free tier is fine, only needed for the weather agent): https://openweathermap.org/api
+- NewsAPI key (free tier is fine, only needed for the news agent): https://newsapi.org/register
+- (No key needed for the crypto agent — CoinGecko's basic API is open.)
 
 ## 2. Install dependencies
 
@@ -27,25 +35,41 @@ Never put keys directly in the code. Export them in your shell instead:
 ```bash
 export ANTHROPIC_API_KEY="your-anthropic-key-here"
 export OPENWEATHER_API_KEY="your-openweather-key-here"
+export NEWSAPI_KEY="your-newsapi-key-here"
 ```
+
+(You only need to set the keys for the agents you plan to run — the crypto
+agent doesn't need any key besides `ANTHROPIC_API_KEY`.)
 
 (Add these two lines to your `~/.bashrc` if you don't want to re-type them
 every time you open a terminal.)
 
-## 4. Run the agent
+## 4. Run an agent
 
 ```bash
 python3 weather_agent.py
+# or
+python3 crypto_agent.py
+# or
+python3 news_agent.py
 ```
 
-This automatically starts `weather_mcp_server.py` for you behind the scenes
-and connects to it over MCP — you don't need to run the server separately.
+Each one automatically starts its matching MCP server behind the scenes —
+you don't need to run the servers separately.
 
-Try asking things like:
+Try asking the weather agent things like:
 - "What's the weather in Tokyo?"
 - "Is it warmer in Paris or Berlin right now?"
 
-Type `quit` to exit.
+Try asking the crypto agent things like:
+- "What's the price of Bitcoin?"
+- "Compare Ethereum and Dogecoin in EUR"
+
+Try asking the news agent things like:
+- "What's the top news today?"
+- "Summarize the latest technology headlines"
+
+Type `quit` to exit any of them.
 
 ## How it fits together
 
