@@ -69,6 +69,10 @@ async def run_agent():
     server_params = StdioServerParameters(
         command=sys.executable,
         args=[os.path.join(os.path.dirname(__file__), "weather_mcp_server.py")],
+        # By default the MCP library only passes a safe subset of environment
+        # variables to the subprocess. Pass our own env through explicitly so
+        # the server can see OPENWEATHER_API_KEY.
+        env=dict(os.environ),
     )
 
     async with stdio_client(server_params) as (read_stream, write_stream):
