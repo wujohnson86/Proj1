@@ -26,6 +26,7 @@ Normally you won't run it directly — mail_agent.py starts it for you.
 """
 
 import os
+import re
 import sys
 import imaplib
 import email
@@ -34,6 +35,26 @@ from email.header import decode_header
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("mail-server")
+
+# Parses an IMAP LIST response line such as:
+#   (\HasNoChildren) "/" "INBOX"
+#   (\HasNoChildren) "." INBOX          <- name without quotes (some servers)
+#   (\Noselect \HasChildren) "/" "Top/Sub Folder"
+# Group 'name' captures everything after the flags and delimiter; quotes
+# (if present) are stripped off afterwards in _folder_name_from_list_line.
+_LIST_LINE_RE = re.compile(r'^\(([^)]*)\)\s+("[^"]*"|NIL)\s+(.+)$')
+
+
+def _folder_name_from_list_line(raw_line) -> str:
+    """Extract just the folder name from one raw LIST response entry."""
+    decoded = raw_line.decode("utf-8", errors="replace") if isinstance(raw_line, bytes) else raw_line
+    match = _LIST_LINE_RE.match(decoded.strip())
+    if not match:
+        return decoded.strip()
+    name = match.group(3).strip()
+    if name.startswith('"') and name.endswith('"'):
+        name = name[1:-1]
+    return name
 
 IMAP_HOST = os.environ.get("IMAP_HOST")
 IMAP_USER = os.environ.get("IMAP_USER")
@@ -168,12 +189,7 @@ def list_mail_folders() -> str:
     if status != "OK":
         return "Could not list folders."
 
-    names = []
-    for raw in folders:
-        # Each entry looks like: b'(\\HasNoChildren) "/" "INBOX"'
-        decoded = raw.decode("utf-8", errors="replace")
-        name = decoded.split('"')[-2] if '"' in decoded else decoded
-        names.append(name)
+    names = [_folder_name_from_list_line(raw) for raw in folders]
 
     return "Folders: " + ", ".join(names)
 
@@ -397,11 +413,7 @@ def folder_exists(folder_name: str) -> str:
     if status != "OK":
         return "Could not list folders to check."
 
-    names = []
-    for raw in folders:
-        decoded = raw.decode("utf-8", errors="replace")
-        name = decoded.split('"')[-2] if '"' in decoded else decoded
-        names.append(name)
+    names = [_folder_name_from_list_line(raw) for raw in folders]
 
     if folder_name in names:
         return f"Yes — '{folder_name}' already exists."
@@ -426,11 +438,7 @@ def create_mail_folder(folder_name: str) -> str:
         conn = _connect()
 
         status, folders = conn.list()
-        existing = []
-        for raw in folders:
-            decoded = raw.decode("utf-8", errors="replace")
-            name = decoded.split('"')[-2] if '"' in decoded else decoded
-            existing.append(name)
+        existing = [_folder_name_from_list_line(raw) for raw in folders]
 
         if folder_name in existing:
             conn.logout()
