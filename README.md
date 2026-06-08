@@ -15,6 +15,10 @@ if you want to see one in isolation:
   CoinGecko (no API key needed at all).
 - `news_mcp_server.py` / `news_agent.py` — news headlines via NewsAPI.org
   (needs a free API key).
+- `mail_mcp_server.py` / `mail_agent.py` — browse your own IMAP mailbox
+  (e.g. self-hosted Dovecot) **read-only**: list folders, list recent
+  messages, read a message. No third-party API or key — just your mail
+  login. (Intentionally read-only for now; it can't move/delete anything.)
 
 Each "agent" file is the one you run — it automatically launches its
 matching "server" file(s) as a subprocess and talks to them over MCP.
@@ -42,10 +46,23 @@ Never put keys directly in the code. Export them in your shell instead:
 export ANTHROPIC_API_KEY="your-anthropic-key-here"
 export OPENWEATHER_API_KEY="your-openweather-key-here"
 export NEWSAPI_KEY="your-newsapi-key-here"
+
+# For the mail agent (your own IMAP/Dovecot server):
+export IMAP_HOST="mail.yourdomain.com"
+export IMAP_USER="you@yourdomain.com"
+export IMAP_PASSWORD="your-mail-password"
+export IMAP_PORT="993"   # optional, defaults to 993 (IMAPS)
 ```
 
-(You only need to set the keys for the agents you plan to run — the crypto
-agent doesn't need any key besides `ANTHROPIC_API_KEY`.)
+(You only need to set the keys/values for the agents you plan to run — the
+crypto agent doesn't need any key besides `ANTHROPIC_API_KEY`, and the mail
+agent only needs the `IMAP_*` variables, not the weather/news keys.)
+
+**About the mail agent:** it talks to your real mailbox over IMAPS (port
+993, encrypted). It is intentionally **read-only** — it can list folders,
+list recent messages, and read individual messages, but cannot move,
+delete, or modify anything. That makes it safe to point at a real account
+while you get a feel for how Claude uses these tools.
 
 (Add these two lines to your `~/.bashrc` if you don't want to re-type them
 every time you open a terminal.)
@@ -74,6 +91,8 @@ python3 weather_agent.py
 python3 crypto_agent.py
 # or
 python3 news_agent.py
+# or
+python3 mail_agent.py
 ```
 
 Each one automatically starts its matching MCP server behind the scenes —
@@ -90,6 +109,11 @@ Try asking the crypto agent things like:
 Try asking the news agent things like:
 - "What's the top news today?"
 - "Summarize the latest technology headlines"
+
+Try asking the mail agent things like:
+- "What folders do I have?"
+- "Show me my 5 most recent emails in the inbox"
+- "What's in the latest message from <someone>?"
 
 Type `quit` to exit any of them.
 
