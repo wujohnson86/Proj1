@@ -47,7 +47,7 @@ MODEL = "claude-sonnet-4-6"
 # real mailbox, and we don't want an LLM deciding on its own to use it mid
 # conversation. Use spam_cleanup.py for a guided, confirm-first way to
 # actually move messages.
-MUTATING_TOOLS = {"move_message_to_folder"}
+MUTATING_TOOLS = {"move_message_to_folder", "create_mail_folder"}
 
 
 def anthropic_tool_schema(mcp_tools):

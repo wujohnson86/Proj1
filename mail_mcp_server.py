@@ -376,5 +376,76 @@ def move_message_to_folder(message_id: str, destination_folder: str, source_fold
     return f"Moved message {message_id} from '{source_folder}' to '{destination_folder}'."
 
 
+@mcp.tool()
+def folder_exists(folder_name: str) -> str:
+    """Check whether a mailbox/folder with this exact name already exists.
+
+    Args:
+        folder_name: The folder name to check, e.g. "SPAM"
+    """
+    error = _missing_config()
+    if error:
+        return error
+
+    try:
+        conn = _connect()
+        status, folders = conn.list()
+        conn.logout()
+    except Exception as e:
+        return f"Failed to check folders: {e}"
+
+    if status != "OK":
+        return "Could not list folders to check."
+
+    names = []
+    for raw in folders:
+        decoded = raw.decode("utf-8", errors="replace")
+        name = decoded.split('"')[-2] if '"' in decoded else decoded
+        names.append(name)
+
+    if folder_name in names:
+        return f"Yes — '{folder_name}' already exists."
+    return f"No — '{folder_name}' does not exist yet. Existing folders: {', '.join(names)}"
+
+
+@mcp.tool()
+def create_mail_folder(folder_name: str) -> str:
+    """Create a new mailbox/folder (e.g. SPAM) if it doesn't already exist.
+
+    This DOES modify your mailbox (it adds a new folder). Only call this
+    after the user has explicitly confirmed they want it created.
+
+    Args:
+        folder_name: The name of the folder to create, e.g. "SPAM"
+    """
+    error = _missing_config()
+    if error:
+        return error
+
+    try:
+        conn = _connect()
+
+        status, folders = conn.list()
+        existing = []
+        for raw in folders:
+            decoded = raw.decode("utf-8", errors="replace")
+            name = decoded.split('"')[-2] if '"' in decoded else decoded
+            existing.append(name)
+
+        if folder_name in existing:
+            conn.logout()
+            return f"'{folder_name}' already exists — nothing to do."
+
+        status, response = conn.create(folder_name)
+        conn.logout()
+    except Exception as e:
+        return f"Failed to create folder '{folder_name}': {e}"
+
+    if status != "OK":
+        return f"Server refused to create '{folder_name}': {response}"
+
+    return f"Created new folder '{folder_name}'."
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")

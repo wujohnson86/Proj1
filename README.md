@@ -137,12 +137,15 @@ python3 spam_cleanup.py
 What happens, step by step:
 1. It lists your IMAP folders
 2. You choose which folder to scan (press Enter for INBOX)
-3. You type one or more subject keywords to search for, comma-separated
+3. You choose the destination folder (press Enter for `SPAM`) — if it
+   doesn't already exist, it asks whether to create it before continuing
+   (it won't create anything, or scan anything, without your "y")
+4. You type one or more subject keywords to search for, comma-separated
    (e.g. `viagra, you've won, free money`)
-4. It shows you every matching message (sender / subject / date) with a number
-5. You type the numbers of the ones to move (or `all`, or nothing to cancel)
-6. It shows you exactly what it's about to do and asks you to type `yes`
-7. Only then does it move those specific messages to your `SPAM` folder
+5. It shows you every matching message (sender / subject / date) with a number
+6. You type the numbers of the ones to move (or `all`, or nothing to cancel)
+7. It shows you exactly what it's about to do and asks you to type `yes`
+8. Only then does it move those specific messages to the destination folder
 
 Nothing is moved until you've seen the exact list and typed `yes` twice
 (once to pick, once to confirm).

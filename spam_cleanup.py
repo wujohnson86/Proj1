@@ -16,10 +16,12 @@ exactly what it found and only moves messages you explicitly say "yes" to.
 The flow:
     1. List your IMAP folders
     2. You pick which folder to scan (default: INBOX)
+    2b. You pick the destination folder (default: SPAM) — if it doesn't
+        exist yet, it asks whether to create it before going any further
     3. You give one or more subject keywords to search for
     4. It shows you every match (sender / subject / date)
     5. You confirm which ones (if any) should be moved
-    6. It moves only the confirmed messages to your SPAM folder
+    6. It moves only the confirmed messages to the destination folder
 
 Setup (same as mail_agent.py):
     pip install mcp
@@ -88,6 +90,29 @@ async def run():
             # --- Step 2: pick a folder to scan ---
             folder = input("Which folder do you want to scan? [INBOX]: ").strip() or "INBOX"
 
+            # --- Step 2b: pick (and if needed, create) the destination folder ---
+            destination = input(
+                "Which folder should matches be moved to? [SPAM]: "
+            ).strip() or "SPAM"
+
+            exists_text = call_text(await session.call_tool("folder_exists", {"folder_name": destination}))
+            print(exists_text)
+            if exists_text.lower().startswith("no"):
+                make_it = input(
+                    f"\n'{destination}' doesn't exist yet. Create it now? [y/N]: "
+                ).strip().lower()
+                if make_it != "y":
+                    print("Okay — not creating it. Exiting (nothing was scanned or moved).")
+                    return
+                create_text = call_text(await session.call_tool("create_mail_folder", {"folder_name": destination}))
+                print(create_text)
+                # Re-check, in case the server rejected the creation for some reason.
+                exists_text = call_text(await session.call_tool("folder_exists", {"folder_name": destination}))
+                if exists_text.lower().startswith("no"):
+                    print(f"\n'{destination}' still doesn't exist — stopping here so nothing gets lost.")
+                    return
+            print()
+
             # --- Step 3: ask for keyword(s) ---
             raw_keywords = input(
                 "Enter one or more spam subject keywords, separated by commas\n"
@@ -122,7 +147,7 @@ async def run():
 
             # --- Step 5: confirm which ones to move ---
             print(
-                "\nWhich ones should be moved to SPAM?\n"
+                f"\nWhich ones should be moved to '{destination}'?\n"
                 "  - Enter numbers separated by commas (e.g. 1,3,4)\n"
                 "  - Enter 'all' to move all of them\n"
                 "  - Enter nothing / 'none' to move nothing"
@@ -144,7 +169,7 @@ async def run():
                     print("Didn't recognize that input — moving nothing. Exiting.")
                     return
 
-            print(f"\nAbout to move {len(chosen_ids)} message(s) from '{folder}' to 'SPAM':")
+            print(f"\nAbout to move {len(chosen_ids)} message(s) from '{folder}' to '{destination}':")
             for msg_id in chosen_ids:
                 print(f"  - {all_matches[msg_id]}")
             final_confirm = input("\nType 'yes' to confirm and move these now: ").strip().lower()
@@ -157,7 +182,7 @@ async def run():
             for msg_id in chosen_ids:
                 outcome = call_text(await session.call_tool(
                     "move_message_to_folder",
-                    {"message_id": msg_id, "destination_folder": "SPAM", "source_folder": folder},
+                    {"message_id": msg_id, "destination_folder": destination, "source_folder": folder},
                 ))
                 print(outcome)
 
