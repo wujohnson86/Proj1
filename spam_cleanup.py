@@ -19,7 +19,12 @@ The flow:
     2b. You pick the destination folder (default: SPAM) — if it doesn't
         exist yet, it asks whether to create it before going any further
     3. You give one or more subject keywords to search for
-    4. It shows you every match (sender / subject / date)
+    3b. (optional) You give trusted sender domains/addresses (e.g.
+        "harborfreight.com") that should always be skipped, even if their
+        subject happens to match a keyword — protects real companies from
+        being flagged just because their marketing email says "SALE!"
+    4. It shows you every match, with trusted-sender ones called out and
+       excluded automatically
     5. You confirm which ones (if any) should be moved
     6. It moves only the confirmed messages to the destination folder
 
@@ -40,6 +45,7 @@ than something we want an LLM improvising on.
 
 import asyncio
 import os
+import re
 import sys
 
 from mcp import ClientSession, StdioServerParameters
@@ -49,6 +55,24 @@ from mcp.client.stdio import stdio_client
 def call_text(result) -> str:
     """Pull the plain-text content out of an MCP tool result."""
     return "".join(part.text for part in result.content if part.type == "text")
+
+
+_SENDER_RE = re.compile(r"From:\s*(.*?)\s*\|")
+
+
+def extract_sender(line: str) -> str:
+    """Pull the 'From: ...' portion out of a listing line, e.g.
+    '\"Harbor Freight\" <HarborFreight@e.harborfreight.com>'."""
+    match = _SENDER_RE.search(line)
+    return match.group(1).strip() if match else ""
+
+
+def is_trusted_sender(sender: str, trusted: list) -> bool:
+    """True if any trusted domain/address appears anywhere in the sender
+    string (display name + email address), case-insensitively. This errs
+    on the side of NOT flagging a real company as spam."""
+    sender_lower = sender.lower()
+    return any(t.lower() in sender_lower for t in trusted if t)
 
 
 def parse_message_lines(listing: str):
@@ -123,8 +147,17 @@ async def run():
                 print("No keywords entered — nothing to search for. Exiting.")
                 return
 
-            # --- Step 4: search and show matches ---
-            all_matches = {}  # message_id -> display line
+            # --- Step 3b: ask for trusted senders to always skip ---
+            raw_trusted = input(
+                "\nAny trusted sender domains/addresses to always SKIP, even if the\n"
+                "subject matches? Separated by commas, optional\n"
+                "(e.g. \"harborfreight.com, amazon.com, newsletter@trustedsite.com\"): "
+            ).strip()
+            trusted_senders = [t.strip() for t in raw_trusted.split(",") if t.strip()]
+
+            # --- Step 4: search, then filter out trusted senders ---
+            all_matches = {}      # message_id -> display line (kept, to possibly move)
+            skipped_trusted = {}  # message_id -> display line (matched keyword, but trusted sender)
             for keyword in keywords:
                 print(f"\nSearching '{folder}' for subjects containing '{keyword}'...")
                 result_text = call_text(await session.call_tool(
@@ -133,14 +166,25 @@ async def run():
                 ))
                 print(result_text)
                 for msg_id, line in parse_message_lines(result_text):
-                    all_matches[msg_id] = line
+                    sender = extract_sender(line)
+                    if trusted_senders and is_trusted_sender(sender, trusted_senders):
+                        skipped_trusted[msg_id] = line
+                    else:
+                        all_matches[msg_id] = line
+
+            if skipped_trusted:
+                print(f"\n{'=' * 60}")
+                print(f"Skipped {len(skipped_trusted)} message(s) — subject matched, "
+                      f"but sender is on your trusted list:\n")
+                for line in skipped_trusted.values():
+                    print(f"  (trusted, skipped) {line}")
 
             if not all_matches:
-                print("\nNo matching messages found. Nothing to do.")
+                print("\nNo non-trusted matching messages found. Nothing to do.")
                 return
 
             print(f"\n{'=' * 60}")
-            print(f"Found {len(all_matches)} unique matching message(s):\n")
+            print(f"Found {len(all_matches)} message(s) that are NOT on your trusted list:\n")
             ids_in_order = list(all_matches.keys())
             for i, msg_id in enumerate(ids_in_order, start=1):
                 print(f"  {i}. {all_matches[msg_id]}")

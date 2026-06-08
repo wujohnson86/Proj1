@@ -142,10 +142,14 @@ What happens, step by step:
    (it won't create anything, or scan anything, without your "y")
 4. You type one or more subject keywords to search for, comma-separated
    (e.g. `viagra, you've won, free money`)
-5. It shows you every matching message (sender / subject / date) with a number
-6. You type the numbers of the ones to move (or `all`, or nothing to cancel)
-7. It shows you exactly what it's about to do and asks you to type `yes`
-8. Only then does it move those specific messages to the destination folder
+5. (optional) You list trusted sender domains/addresses to always skip —
+   e.g. `harborfreight.com, amazon.com` — so a real company's "SALE!"
+   marketing email never gets flagged just because it matches a keyword
+6. It shows you every match, calling out and excluding any that came from
+   a trusted sender, with a number for the rest
+7. You type the numbers of the ones to move (or `all`, or nothing to cancel)
+8. It shows you exactly what it's about to do and asks you to type `yes`
+9. Only then does it move those specific messages to the destination folder
 
 Nothing is moved until you've seen the exact list and typed `yes` twice
 (once to pick, once to confirm).
