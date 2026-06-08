@@ -42,9 +42,19 @@ from mcp.client.stdio import stdio_client
 MODEL = "claude-sonnet-4-6"
 
 
+# This agent is for free-form browsing/reading only. It deliberately never
+# offers move_message_to_folder to Claude — that's a mutating action on a
+# real mailbox, and we don't want an LLM deciding on its own to use it mid
+# conversation. Use spam_cleanup.py for a guided, confirm-first way to
+# actually move messages.
+MUTATING_TOOLS = {"move_message_to_folder"}
+
+
 def anthropic_tool_schema(mcp_tools):
     tools = []
     for tool in mcp_tools:
+        if tool.name in MUTATING_TOOLS:
+            continue
         tools.append({
             "name": tool.name,
             "description": tool.description or "",

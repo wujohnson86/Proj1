@@ -1,16 +1,17 @@
 """
-Mail MCP Server (read-only)
-===========================
+Mail MCP Server
+===============
 
-A tiny MCP server exposing tools to look at your own IMAP mailbox
-(e.g. a self-hosted Dovecot server) using Python's built-in imaplib.
-No external API or third-party key needed — just your mail credentials.
+A tiny MCP server exposing tools to look at (and, carefully, act on) your
+own IMAP mailbox (e.g. a self-hosted Dovecot server) using Python's
+built-in imaplib. No external API or third-party key needed — just your
+mail credentials.
 
-This first version is READ-ONLY on purpose: it can list folders, list
-recent messages, and read a message's contents — but it cannot move,
-delete, or modify anything. That makes it safe to experiment with on a
-real mailbox. A "move to spam" tool can be added later once you're
-comfortable with how the agent behaves.
+Most tools here are READ-ONLY: list folders, list recent messages, read a
+message, and search by subject keyword. There is exactly ONE tool that
+modifies your mailbox — move_message_to_folder — and it's designed to only
+ever be called for a message the user has already seen and explicitly
+confirmed (see spam_cleanup.py for a guided, confirm-before-acting flow).
 
 Set these environment variables before running (see README.md):
     export IMAP_HOST="mail.yourdomain.com"
@@ -198,6 +199,104 @@ def read_message(message_id: str, folder: str = "INBOX") -> str:
         return f"From: {sender}\nSubject: {subject}\n\n{body}"
     except Exception as e:
         return f"Failed to read message: {e}"
+
+
+@mcp.tool()
+def search_messages_by_subject(keyword: str, folder: str = "INBOX", count: int = 25) -> str:
+    """Search a folder for messages whose subject contains a keyword (read-only).
+
+    Args:
+        keyword: Word or phrase to search for in the subject line, e.g. "viagra" or "winner"
+        folder: The mailbox/folder to search in (default "INBOX")
+        count: Maximum number of matches to show, max 50 (default 25)
+    """
+    error = _missing_config()
+    if error:
+        return error
+
+    count = max(1, min(count, 50))
+
+    try:
+        conn = _connect()
+        status, _ = conn.select(folder, readonly=True)
+        if status != "OK":
+            conn.logout()
+            return f"Could not open folder '{folder}'. Try list_mail_folders to see valid names."
+
+        # IMAP SEARCH SUBJECT does a substring match on the decoded subject server-side.
+        status, data = conn.search(None, "SUBJECT", f'"{keyword}"')
+        if status != "OK":
+            conn.logout()
+            return f"Search failed in folder '{folder}'."
+
+        ids = data[0].split()
+        matched_ids = ids[-count:][::-1]  # newest first
+
+        lines = []
+        for msg_id in matched_ids:
+            status, msg_data = conn.fetch(msg_id, "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])")
+            if status != "OK":
+                continue
+            raw_headers = msg_data[0][1]
+            msg = email.message_from_bytes(raw_headers)
+            sender = _decode(msg.get("From", "Unknown sender"))
+            subject = _decode(msg.get("Subject", "(no subject)"))
+            date = msg.get("Date", "")
+            lines.append(f"[id {msg_id.decode()}] From: {sender} | Subject: {subject} | Date: {date}")
+
+        conn.logout()
+    except Exception as e:
+        return f"Failed to search messages: {e}"
+
+    if not lines:
+        return f"No messages with '{keyword}' in the subject found in '{folder}'."
+
+    return f"Messages in '{folder}' with '{keyword}' in the subject:\n" + "\n".join(lines)
+
+
+@mcp.tool()
+def move_message_to_folder(message_id: str, destination_folder: str, source_folder: str = "INBOX") -> str:
+    """Move a single message from one folder to another (e.g. to SPAM).
+
+    This DOES modify your mailbox — it copies the message to the destination
+    folder and removes it from the source folder. Only call this for a
+    message ID you have already shown the user and they have explicitly
+    confirmed should be moved.
+
+    Args:
+        message_id: The numeric message ID (from list_recent_messages or search_messages_by_subject)
+        destination_folder: The folder to move the message into, e.g. "SPAM"
+        source_folder: The folder the message currently lives in (default "INBOX")
+    """
+    error = _missing_config()
+    if error:
+        return error
+
+    try:
+        conn = _connect()
+        status, _ = conn.select(source_folder, readonly=False)
+        if status != "OK":
+            conn.logout()
+            return f"Could not open folder '{source_folder}'."
+
+        msg_id_bytes = message_id.encode()
+
+        # Copy to destination, then mark the original as deleted and expunge it.
+        status, _ = conn.copy(msg_id_bytes, destination_folder)
+        if status != "OK":
+            conn.logout()
+            return (
+                f"Could not copy message {message_id} to '{destination_folder}'. "
+                f"Check the folder name with list_mail_folders."
+            )
+
+        conn.store(msg_id_bytes, "+FLAGS", "\\Deleted")
+        conn.expunge()
+        conn.logout()
+    except Exception as e:
+        return f"Failed to move message: {e}"
+
+    return f"Moved message {message_id} from '{source_folder}' to '{destination_folder}'."
 
 
 if __name__ == "__main__":

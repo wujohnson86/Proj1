@@ -16,9 +16,12 @@ if you want to see one in isolation:
 - `news_mcp_server.py` / `news_agent.py` — news headlines via NewsAPI.org
   (needs a free API key).
 - `mail_mcp_server.py` / `mail_agent.py` — browse your own IMAP mailbox
-  (e.g. self-hosted Dovecot) **read-only**: list folders, list recent
-  messages, read a message. No third-party API or key — just your mail
-  login. (Intentionally read-only for now; it can't move/delete anything.)
+  (e.g. self-hosted Dovecot): list folders, list recent messages, read a
+  message, search by subject keyword. No third-party API or key — just
+  your mail login.
+- `spam_cleanup.py` — a guided (non-chat) tool that searches a folder for
+  spam-like subjects and, only after you explicitly confirm exactly which
+  messages, moves them to your SPAM folder. See "Spam cleanup" below.
 
 Each "agent" file is the one you run — it automatically launches its
 matching "server" file(s) as a subprocess and talks to them over MCP.
@@ -59,10 +62,12 @@ crypto agent doesn't need any key besides `ANTHROPIC_API_KEY`, and the mail
 agent only needs the `IMAP_*` variables, not the weather/news keys.)
 
 **About the mail agent:** it talks to your real mailbox over IMAPS (port
-993, encrypted). It is intentionally **read-only** — it can list folders,
-list recent messages, and read individual messages, but cannot move,
-delete, or modify anything. That makes it safe to point at a real account
-while you get a feel for how Claude uses these tools.
+993, encrypted). `mail_agent.py` is a free-chat agent for *looking around*
+(folders, recent messages, reading, searching by subject) — Claude decides
+which read-only tool to call based on what you ask. The one tool that can
+actually change your mailbox (`move_message_to_folder`) is *not* something
+this chat agent will use on its own — see "Spam cleanup" below for the
+guided, confirm-first way to actually move messages.
 
 (Add these two lines to your `~/.bashrc` if you don't want to re-type them
 every time you open a terminal.)
@@ -116,6 +121,31 @@ Try asking the mail agent things like:
 - "What's in the latest message from <someone>?"
 
 Type `quit` to exit any of them.
+
+## Spam cleanup (guided, confirm-first)
+
+`spam_cleanup.py` is a different kind of tool: instead of free chat, it
+walks you through a fixed sequence of steps and never moves anything
+without your explicit "yes". It does NOT use the Anthropic API at all —
+just the MCP mail server directly — because this workflow doesn't need an
+LLM improvising on a real, hard-to-reverse mailbox action.
+
+```bash
+python3 spam_cleanup.py
+```
+
+What happens, step by step:
+1. It lists your IMAP folders
+2. You choose which folder to scan (press Enter for INBOX)
+3. You type one or more subject keywords to search for, comma-separated
+   (e.g. `viagra, you've won, free money`)
+4. It shows you every matching message (sender / subject / date) with a number
+5. You type the numbers of the ones to move (or `all`, or nothing to cancel)
+6. It shows you exactly what it's about to do and asks you to type `yes`
+7. Only then does it move those specific messages to your `SPAM` folder
+
+Nothing is moved until you've seen the exact list and typed `yes` twice
+(once to pick, once to confirm).
 
 ## How it fits together
 
