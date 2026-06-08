@@ -53,10 +53,87 @@ def _missing_config():
 
 def _connect():
     """Open a fresh IMAP connection. We open/close per-call to keep this simple
-    and avoid holding a stale connection open between tool calls."""
-    conn = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT)
-    conn.login(IMAP_USER, IMAP_PASSWORD)
+    and avoid holding a stale connection open between tool calls.
+
+    Raises a RuntimeError with a detailed (but password-free) message if
+    either the connection or the login step fails, so callers can surface
+    something more useful than a bare 'authentication failed'.
+    """
+    try:
+        conn = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT)
+    except Exception as e:
+        raise RuntimeError(
+            f"Could not open a connection to {IMAP_HOST}:{IMAP_PORT} over IMAPS (SSL). "
+            f"Underlying error: {type(e).__name__}: {e}. "
+            f"Double-check IMAP_HOST and IMAP_PORT, and that the server accepts "
+            f"IMAPS on that port (993 is the usual default)."
+        )
+
+    try:
+        conn.login(IMAP_USER, IMAP_PASSWORD)
+    except imaplib.IMAP4.error as e:
+        # The server's actual response is the most useful debugging info here —
+        # e.g. b'[AUTHENTICATIONFAILED] Authentication failed.' — and contains
+        # no password, so it's safe to surface directly.
+        try:
+            conn.logout()
+        except Exception:
+            pass
+        raise RuntimeError(
+            f"Login to {IMAP_HOST}:{IMAP_PORT} as user '{IMAP_USER}' was rejected by the server. "
+            f"Server said: {e}. "
+            f"Double-check IMAP_USER and IMAP_PASSWORD (and whether this account needs "
+            f"a username like 'johnson' vs the full email address 'johnson@snoopy.org')."
+        )
+    except Exception as e:
+        try:
+            conn.logout()
+        except Exception:
+            pass
+        raise RuntimeError(
+            f"Unexpected error logging in to {IMAP_HOST}:{IMAP_PORT} as '{IMAP_USER}': "
+            f"{type(e).__name__}: {e}"
+        )
+
     return conn
+
+
+@mcp.tool()
+def test_connection() -> str:
+    """Try connecting and logging in to the IMAP server, and report exactly
+    what happens — useful for diagnosing 'authentication failed' problems
+    without printing your password anywhere."""
+    error = _missing_config()
+    if error:
+        return error
+
+    report = [
+        f"IMAP_HOST = {IMAP_HOST}",
+        f"IMAP_PORT = {IMAP_PORT}",
+        f"IMAP_USER = {IMAP_USER}",
+        "IMAP_PASSWORD = (set, length hidden)" if IMAP_PASSWORD else "IMAP_PASSWORD = (NOT SET)",
+        "",
+    ]
+
+    try:
+        conn = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT)
+        report.append(f"Connected to {IMAP_HOST}:{IMAP_PORT} over IMAPS — OK")
+        report.append(f"Server greeting/capabilities: {conn.welcome}")
+    except Exception as e:
+        report.append(f"FAILED to connect: {type(e).__name__}: {e}")
+        return "\n".join(report)
+
+    try:
+        status, resp = conn.login(IMAP_USER, IMAP_PASSWORD)
+        report.append(f"Login status: {status}, server response: {resp}")
+        report.append("Login succeeded!")
+        conn.logout()
+    except imaplib.IMAP4.error as e:
+        report.append(f"Login REJECTED by server. Server said: {e}")
+    except Exception as e:
+        report.append(f"Unexpected error during login: {type(e).__name__}: {e}")
+
+    return "\n".join(report)
 
 
 def _decode(value):
