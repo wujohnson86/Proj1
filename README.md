@@ -1,7 +1,13 @@
 # MCP Agent Playground (Beginner Project)
 
+The main thing to run is **`agent.py`** — a single agent that connects to
+all three MCP servers below at once and figures out on its own which
+tool(s) to use based on what you ask (it can even combine them, e.g.
+"weather in Tokyo and the price of Bitcoin").
+
 Small Python pairs of (MCP server + Claude agent), each demonstrating the
-same pattern with a different free API:
+same pattern with a different free API — these also still work standalone
+if you want to see one in isolation:
 
 - `weather_mcp_server.py` / `weather_agent.py` — weather lookups via
   OpenWeatherMap (needs a free API key).
@@ -11,7 +17,7 @@ same pattern with a different free API:
   (needs a free API key).
 
 Each "agent" file is the one you run — it automatically launches its
-matching "server" file as a subprocess and talks to it over MCP.
+matching "server" file(s) as a subprocess and talks to them over MCP.
 
 ## 1. Get your API keys ready
 
@@ -45,6 +51,22 @@ agent doesn't need any key besides `ANTHROPIC_API_KEY`.)
 every time you open a terminal.)
 
 ## 4. Run an agent
+
+The easiest way to start is the all-in-one agent — it has access to every
+tool and figures out which one(s) to use:
+
+```bash
+python3 agent.py
+```
+
+Try asking it things like:
+- "What's the weather in Tokyo?"
+- "What's the price of Bitcoin?"
+- "What's the top tech news today?"
+- "Give me the weather in Paris AND the price of Ethereum" (it can chain
+  multiple tool calls to answer one question!)
+
+You can also run any of the single-purpose agents on their own:
 
 ```bash
 python3 weather_agent.py
