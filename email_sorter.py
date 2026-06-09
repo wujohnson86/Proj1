@@ -268,42 +268,55 @@ async def run(count: int, auto: bool):
                 print(f"  Subject : {subject[:70]}")
                 print(f"  Proposed: {folder}  ({reason})")
 
-                valid_folders = ", ".join(f for f in TARGET_FOLDERS if f != "INBOX")
+                FOLDER_CHOICES = [f for f in TARGET_FOLDERS if f != "INBOX"]
+
+                def pick_folder_interactively() -> str | None:
+                    """Show a numbered list of folders and return the user's pick,
+                    or None if they cancel."""
+                    print()
+                    for n, name in enumerate(FOLDER_CHOICES, 1):
+                        print(f"    {n}. {name:15s} — {TARGET_FOLDERS[name][:55]}")
+                    print(f"    0. Cancel (keep in INBOX)")
+                    raw = input("  Pick a number: ").strip()
+                    if raw == "0" or raw == "":
+                        return None
+                    if raw.isdigit() and 1 <= int(raw) <= len(FOLDER_CHOICES):
+                        return FOLDER_CHOICES[int(raw) - 1]
+                    print("  Invalid number — keeping in INBOX.")
+                    return None
 
                 if auto:
                     do_move = folder != "INBOX"
                     correction = folder
                 else:
                     if folder == "INBOX":
-                        prompt = (
-                            f"  Proposed: leave in INBOX. "
-                            f"Move somewhere instead? [Enter=keep / folder-name / s=skip]: "
-                        )
+                        prompt = "  Proposed: leave in INBOX. Move somewhere? [Enter=keep / f=pick folder / s=skip]: "
                     else:
-                        prompt = (
-                            f"  Move to '{folder}'? "
-                            f"[y=yes / folder-name to correct / Enter=keep in INBOX / s=skip]: "
-                        )
+                        prompt = f"  Move to '{folder}'? [y / f=pick folder / Enter=keep in INBOX / s=skip]: "
 
-                    raw = input(prompt).strip()
+                    raw = input(prompt).strip().lower()
 
-                    if raw.lower() == "s":
+                    if raw == "f":
+                        picked = pick_folder_interactively()
+                        if picked:
+                            raw = picked
+                        else:
+                            raw = ""  # treat as "keep in INBOX"
+
+                    if raw == "s":
                         do_move = False
                         correction = None
                         skipped += 1
-                    elif raw.lower() in ("y", "") and folder != "INBOX":
-                        # Accept proposal (only makes sense if proposal wasn't INBOX)
-                        do_move = True if folder != "INBOX" else False
+                    elif raw in ("y", "") and folder != "INBOX":
+                        do_move = True
                         correction = folder
                     elif raw == "" and folder == "INBOX":
-                        # Enter on an INBOX proposal = keep it there
                         do_move = False
                         correction = "INBOX"
                     else:
                         correction = raw.strip()
                         if correction not in TARGET_FOLDERS:
-                            print(f"  Unknown folder '{correction}'.")
-                            print(f"  Valid choices: {valid_folders}")
+                            print(f"  Unknown folder '{correction}'. Type 'f' to see the list.")
                             do_move = False
                             correction = None
                             skipped += 1
