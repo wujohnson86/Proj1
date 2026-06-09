@@ -25,6 +25,12 @@ if you want to see one in isolation:
 - `spam_cleanup.py` — a guided (non-chat) tool that searches a folder for
   spam-like subjects and, only after you explicitly confirm exactly which
   messages, moves them to your SPAM folder. See "Spam cleanup" below.
+- `email_sorter.py` — a smart email sorter powered by Claude that reads
+  your INBOX and classifies messages into target folders (Promotions,
+  Receipts, Newsletters, Consulting, Finance, Social, Travel, Friends).
+  Runs in training mode by default (confirm each move) or `--auto` once
+  you trust it. Learns sender domains over time via `sorter_rules.json`
+  so repeat senders never hit the Claude API again. See "Email sorter" below.
 
 Each "agent" file is the one you run — it automatically launches its
 matching "server" file(s) as a subprocess and talks to them over MCP.
@@ -170,3 +176,33 @@ You  -->  weather_agent.py  -->  Claude (Anthropic API)
                 v
        weather_mcp_server.py  -->  OpenWeatherMap API
 ```
+
+## Email sorter
+
+`email_sorter.py` uses Claude to classify your INBOX messages and sort them
+into folders. It never deletes anything — messages are moved (copied to
+destination, removed from source).
+
+**Target folders** (created automatically on first run):
+`Promotions`, `Receipts`, `Newsletters`, `Consulting`, `Finance`,
+`Social`, `Travel`, `Friends` — or left in `INBOX` if unclear.
+
+**Training mode** (default — safe, you confirm everything):
+```bash
+python3 email_sorter.py           # processes 20 most recent messages
+python3 email_sorter.py --count 50
+```
+At each message you type:
+- `y` — accept proposed folder and save the rule
+- `Newsletters` (or any valid folder name) — correct it and save the rule
+- `s` — skip, don't learn
+
+**Auto mode** (once you've trained it for a few days):
+```bash
+python3 email_sorter.py --auto --count 100
+```
+
+**Learning:** every confirmed/corrected classification is saved to
+`sorter_rules.json`. Known sender domains are classified instantly on
+future runs without any Claude API call, so it gets faster and cheaper
+over time.

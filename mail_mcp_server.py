@@ -455,5 +455,55 @@ def create_mail_folder(folder_name: str) -> str:
     return f"Created new folder '{folder_name}'."
 
 
+@mcp.tool()
+def peek_message(message_id: str, folder: str = "INBOX", chars: int = 400) -> str:
+    """Fetch just the first N characters of a message's body plus its
+    From/Subject headers — cheaper than read_message for classification
+    purposes where you don't need the full content.
+
+    Args:
+        message_id: The numeric message ID (from list_recent_messages)
+        folder: The mailbox/folder the message is in (default "INBOX")
+        chars: How many characters of body to return, max 800 (default 400)
+    """
+    error = _missing_config()
+    if error:
+        return error
+
+    chars = max(50, min(chars, 800))
+
+    try:
+        conn = _connect()
+        status, _ = conn.select(folder, readonly=True)
+        if status != "OK":
+            conn.logout()
+            return f"Could not open folder '{folder}'."
+
+        status, msg_data = conn.fetch(message_id.encode(), "(BODY.PEEK[])")
+        conn.logout()
+        if status != "OK" or not msg_data or msg_data[0] is None:
+            return f"Could not fetch message {message_id}."
+
+        msg = email.message_from_bytes(msg_data[0][1])
+        sender = _decode(msg.get("From", "Unknown"))
+        subject = _decode(msg.get("Subject", "(no subject)"))
+
+        body = ""
+        if msg.is_multipart():
+            for part in msg.walk():
+                if part.get_content_type() == "text/plain" and not part.get_filename():
+                    charset = part.get_content_charset() or "utf-8"
+                    body = part.get_payload(decode=True).decode(charset, errors="replace")
+                    break
+        else:
+            charset = msg.get_content_charset() or "utf-8"
+            body = msg.get_payload(decode=True).decode(charset, errors="replace")
+
+        snippet = body.strip()[:chars]
+        return f"From: {sender}\nSubject: {subject}\nSnippet: {snippet}"
+    except Exception as e:
+        return f"Failed to peek at message: {e}"
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")
