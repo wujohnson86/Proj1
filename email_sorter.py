@@ -81,8 +81,18 @@ optionally a short body snippet, classify the email into exactly one of these fo
 Respond with ONLY a JSON object like:
 {{"folder": "Receipts", "reason": "Order confirmation from Amazon"}}
 
-Be decisive. If unsure between two folders, pick the more specific one.
-Never suggest deleting anything. If truly ambiguous, use "INBOX"."""
+Rules:
+- Be decisive and specific. Nearly every email fits a non-INBOX category.
+- Marketing/deals/sales from any company → Promotions (even from stores you like)
+- Any order/shipping/invoice → Receipts
+- Blog posts, digests, tips, how-tos → Newsletters
+- Recruiters, job offers, freelance inquiries → Consulting
+- Bank/credit card/billing → Finance
+- LinkedIn/Twitter/social platform pings → Social
+- Flight/hotel/booking confirmations → Travel
+- Personal email from a real human → Friends
+- ONLY use INBOX for genuinely important, personal, or action-required email
+  that doesn't fit any category above. Do NOT default to INBOX out of caution."""
 
 
 def call_text(result) -> str:
@@ -258,39 +268,47 @@ async def run(count: int, auto: bool):
                 print(f"  Subject : {subject[:70]}")
                 print(f"  Proposed: {folder}  ({reason})")
 
-                if folder == "INBOX":
-                    print("  → Already in INBOX, no move needed.")
-                    stayed += 1
-                    # Still let user teach the rule
-                    if not auto and api_used:
-                        teach = input("  Record this sender's domain for future runs? [y/N]: ").strip().lower()
-                        if teach == "y":
-                            rules["sender_rules"][domain] = "INBOX"
-                            save_rules(rules)
-                    continue
+                valid_folders = ", ".join(f for f in TARGET_FOLDERS if f != "INBOX")
 
                 if auto:
-                    do_move = True
+                    do_move = folder != "INBOX"
                     correction = folder
                 else:
-                    raw = input(
-                        f"  Move to '{folder}'? [y / folder-name to correct / s to skip]: "
-                    ).strip()
-                    if raw.lower() == "y" or raw == "":
-                        do_move = True
-                        correction = folder
-                    elif raw.lower() == "s":
+                    if folder == "INBOX":
+                        prompt = (
+                            f"  Proposed: leave in INBOX. "
+                            f"Move somewhere instead? [Enter=keep / folder-name / s=skip]: "
+                        )
+                    else:
+                        prompt = (
+                            f"  Move to '{folder}'? "
+                            f"[y=yes / folder-name to correct / Enter=keep in INBOX / s=skip]: "
+                        )
+
+                    raw = input(prompt).strip()
+
+                    if raw.lower() == "s":
                         do_move = False
                         correction = None
                         skipped += 1
+                    elif raw.lower() in ("y", "") and folder != "INBOX":
+                        # Accept proposal (only makes sense if proposal wasn't INBOX)
+                        do_move = True if folder != "INBOX" else False
+                        correction = folder
+                    elif raw == "" and folder == "INBOX":
+                        # Enter on an INBOX proposal = keep it there
+                        do_move = False
+                        correction = "INBOX"
                     else:
-                        # User typed a different folder name
                         correction = raw.strip()
-                        if correction not in TARGET_FOLDERS and correction != "INBOX":
-                            print(f"  Unknown folder '{correction}' — skipping.")
+                        if correction not in TARGET_FOLDERS:
+                            print(f"  Unknown folder '{correction}'.")
+                            print(f"  Valid choices: {valid_folders}")
                             do_move = False
                             correction = None
                             skipped += 1
+                        elif correction == "INBOX":
+                            do_move = False
                         else:
                             do_move = True
 
@@ -301,10 +319,14 @@ async def run(count: int, auto: bool):
                     ))
                     print(f"  ✓ {result}")
                     moved += 1
-
-                    # Save the rule for this sender domain
                     rules["sender_rules"][domain] = correction
                     save_rules(rules)
+                else:
+                    # Not moved, not skipped → stays in INBOX
+                    stayed += 1
+                    if correction == "INBOX" and domain not in rules["sender_rules"]:
+                        rules["sender_rules"][domain] = "INBOX"
+                        save_rules(rules)
 
             print("\n" + "=" * 70)
             print(f"Done. Moved: {moved}  |  Stayed in INBOX: {stayed}  |  Skipped: {skipped}")
@@ -329,10 +351,11 @@ def main():
     else:
         print("=== TRAINING MODE — you will confirm each move ===")
         print("Commands at each prompt:")
-        print("  y            — accept the proposed folder")
-        print("  <folder>     — correct to a different folder (e.g. 'Newsletters')")
-        print("  s            — skip this message (leave in INBOX, don't learn)")
-        print(f"  Valid folders: {', '.join(TARGET_FOLDERS.keys())}\n")
+        print("  y            — accept the proposed folder and move it")
+        print("  Enter        — keep it in INBOX (no move)")
+        print("  Newsletters  — (or any folder name) override the proposal")
+        print("  s            — skip entirely, don't learn this sender")
+        print(f"  Valid folders: {', '.join(f for f in TARGET_FOLDERS if f != 'INBOX')}\n")
 
     asyncio.run(run(args.count, args.auto))
 
