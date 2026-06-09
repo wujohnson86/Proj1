@@ -48,6 +48,7 @@ SERVERS = [
     ("weather", "weather_mcp_server.py"),
     ("crypto", "crypto_mcp_server.py"),
     ("news", "news_mcp_server.py"),
+    ("shodan", "shodan_mcp_server.py"),
 ]
 
 
@@ -67,6 +68,9 @@ async def connect_to_server(stack: AsyncExitStack, script_name: str) -> ClientSe
 async def run_agent():
     if not os.environ.get("ANTHROPIC_API_KEY"):
         sys.exit("Error: please set ANTHROPIC_API_KEY (export ANTHROPIC_API_KEY=...)")
+    if not os.environ.get("SHODAN_API_KEY"):
+        print("Warning: SHODAN_API_KEY not set — search_shodan will fail, "
+              "but lookup_ip (InternetDB) will still work without a key.\n")
 
     client = Anthropic()
 

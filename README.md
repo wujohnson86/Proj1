@@ -13,6 +13,9 @@ if you want to see one in isolation:
   OpenWeatherMap (needs a free API key).
 - `crypto_mcp_server.py` / `crypto_agent.py` — cryptocurrency prices via
   CoinGecko (no API key needed at all).
+- `shodan_mcp_server.py` — two tools: `lookup_ip` (free InternetDB, no
+  credits) and `search_shodan` (uses your Shodan API key + query credits).
+  Wired into `agent.py` — no standalone agent script needed.
 - `news_mcp_server.py` / `news_agent.py` — news headlines via NewsAPI.org
   (needs a free API key).
 - `mail_mcp_server.py` / `mail_agent.py` — browse your own IMAP mailbox
@@ -49,6 +52,7 @@ Never put keys directly in the code. Export them in your shell instead:
 export ANTHROPIC_API_KEY="your-anthropic-key-here"
 export OPENWEATHER_API_KEY="your-openweather-key-here"
 export NEWSAPI_KEY="your-newsapi-key-here"
+export SHODAN_API_KEY="your-shodan-key-here"
 
 # For the mail agent (your own IMAP/Dovecot server):
 export IMAP_HOST="mail.yourdomain.com"
