@@ -242,6 +242,27 @@ async def run(count: int, auto: bool):
             skipped = 0
             api_calls = 0
 
+            # Queue of (message_id, destination_folder, display_line) to execute later.
+            # Built up during review; flushed when user types GO or at end of session.
+            move_queue = []
+
+            async def flush_queue():
+                """Execute all queued moves and clear the queue."""
+                nonlocal moved
+                if not move_queue:
+                    print("  (nothing in queue)")
+                    return
+                print(f"\n  Executing {len(move_queue)} queued move(s)...")
+                for q_id, q_dest, q_display in move_queue:
+                    r = call_text(await session.call_tool(
+                        "move_message_to_folder",
+                        {"message_id": q_id, "destination_folder": q_dest, "source_folder": "INBOX"},
+                    ))
+                    print(f"    ✓ {r}")
+                    moved += 1
+                move_queue.clear()
+                print(f"  Queue flushed.\n")
+
             for i, msg in enumerate(messages, 1):
                 sender = msg["from"]
                 subject = msg["subject"]
@@ -304,6 +325,18 @@ async def run(count: int, auto: bool):
                 if auto:
                     do_move = folder != "INBOX"
                     correction = folder
+                    if do_move:
+                        # Auto mode executes immediately — no queue
+                        r = call_text(await session.call_tool(
+                            "move_message_to_folder",
+                            {"message_id": msg["id"], "destination_folder": correction,
+                             "source_folder": "INBOX"},
+                        ))
+                        print(f"  ✓ {r}")
+                        moved += 1
+                        rules["sender_rules"][domain] = correction
+                        save_rules(rules)
+                    continue
                 else:
                     if folder == "INBOX":
                         prompt = "  Proposed: leave in INBOX. Move somewhere? [Enter=keep / f=list / n=new folder / s=skip]: "
@@ -343,18 +376,16 @@ async def run(count: int, auto: bool):
                             do_move = True
 
                 if do_move and correction and correction != "INBOX":
-                    result = call_text(await session.call_tool(
-                        "move_message_to_folder",
-                        {"message_id": msg["id"], "destination_folder": correction, "source_folder": "INBOX"},
-                    ))
-                    print(f"  ✓ {result}")
-                    moved += 1
+                    # Queue the move rather than executing it immediately.
+                    move_queue.append((msg["id"], correction, msg["raw"]))
+                    print(f"  → queued: move to '{correction}'  "
+                          f"[{len(move_queue)} in queue — type GO to execute now]")
                     rules["sender_rules"][domain] = correction
                     save_rules(rules)
 
-                    # --- Offer to bulk-move all other messages from same sender ---
+                    # --- Offer to bulk-queue all other messages from same sender ---
                     bulk = input(
-                        f"  Move ALL other '{domain}' messages in INBOX to '{correction}'? [y/N]: "
+                        f"  Also queue ALL other '{domain}' messages → '{correction}'? [y/N]: "
                     ).strip().lower()
                     if bulk == "y":
                         others_text = call_text(await session.call_tool(
@@ -362,34 +393,52 @@ async def run(count: int, auto: bool):
                             {"sender_pattern": domain, "folder": "INBOX", "count": 100},
                         ))
                         others = parse_listing(others_text)
-                        # Exclude the message we already moved (it's gone from INBOX now)
                         others = [m for m in others if m["id"] != msg["id"]]
                         if not others:
                             print(f"  No other '{domain}' messages found in INBOX.")
                         else:
-                            print(f"  Found {len(others)} more message(s) from '{domain}':")
+                            print(f"  Found {len(others)} more — showing first 5:")
                             for o in others[:5]:
                                 print(f"    {o['raw'][:90]}")
                             if len(others) > 5:
                                 print(f"    ... and {len(others) - 5} more")
                             confirm_bulk = input(
-                                f"  Move all {len(others)} to '{correction}'? [y/N]: "
+                                f"  Queue all {len(others)} → '{correction}'? [y/N]: "
                             ).strip().lower()
                             if confirm_bulk == "y":
                                 for o in others:
-                                    r = call_text(await session.call_tool(
-                                        "move_message_to_folder",
-                                        {"message_id": o["id"], "destination_folder": correction,
-                                         "source_folder": "INBOX"},
-                                    ))
-                                    print(f"    ✓ {r}")
-                                    moved += 1
-                                print(f"  Bulk move done — {len(others)} messages moved.")
+                                    move_queue.append((o["id"], correction, o["raw"]))
+                                print(f"  → {len(others)} added to queue  "
+                                      f"[{len(move_queue)} total in queue]")
                 else:
                     stayed += 1
                     if correction == "INBOX" and domain not in rules["sender_rules"]:
                         rules["sender_rules"][domain] = "INBOX"
                         save_rules(rules)
+
+                # Let the user flush the queue mid-session by typing GO at any prompt.
+                # We check after each message so they can bail out of reviewing early too.
+                if move_queue:
+                    go = input(
+                        f"  [Queue: {len(move_queue)} pending] "
+                        f"Type GO to execute now, or Enter to keep reviewing: "
+                    ).strip().upper()
+                    if go == "GO":
+                        await flush_queue()
+
+            # Flush any remaining queue at end of review
+            if move_queue:
+                print(f"\n{'=' * 70}")
+                print(f"Review done. {len(move_queue)} move(s) still queued:")
+                for q_id, q_dest, q_display in move_queue:
+                    print(f"  → {q_display[:80]}  →  {q_dest}")
+                go = input("\nExecute all queued moves now? [y/N]: ").strip().lower()
+                if go == "y":
+                    await flush_queue()
+                else:
+                    print(f"Skipped — {len(move_queue)} moves NOT executed. "
+                          f"Rules were already saved so they'll be auto-sorted next run.")
+                    move_queue.clear()
 
             print("\n" + "=" * 70)
             print(f"Done. Moved: {moved}  |  Stayed in INBOX: {stayed}  |  Skipped: {skipped}")
@@ -414,15 +463,19 @@ def main():
     else:
         print("=== TRAINING MODE — you will confirm each move ===")
         print("Commands at each prompt:")
-        print("  y            — accept the proposed folder and move it")
+        print("  y            — queue move to proposed folder")
         print("  Enter        — keep it in INBOX (no move)")
         print("  Newsletters  — (or any folder name) override the proposal")
         print("  f            — show numbered folder list to pick from")
         print("  n            — create a brand new folder and move there")
         print("  s            — skip entirely, don't learn this sender")
+        print("  GO           — execute all queued moves immediately and keep going")
         print()
-        print("After any move you'll also be asked:")
-        print("  Move ALL other messages from the same sender? [y/N]")
+        print("Moves are QUEUED (not executed immediately) — at the end you")
+        print("get one final prompt to execute them all, or type GO mid-session.")
+        print()
+        print("After queuing a move you'll also be asked:")
+        print("  Queue ALL other messages from the same sender? [y/N]")
         print(f"\n  Valid folders: {', '.join(f for f in TARGET_FOLDERS if f != 'INBOX')}\n")
 
     asyncio.run(run(args.count, args.auto))
