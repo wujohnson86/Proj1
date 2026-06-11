@@ -268,11 +268,11 @@ async def run(count: int, auto: bool):
                 print(f"  Subject : {subject[:70]}")
                 print(f"  Proposed: {folder}  ({reason})")
 
+                # FOLDER_CHOICES is mutable — new folders added via 'n' appear
+                # in the picker for the rest of this session.
                 FOLDER_CHOICES = [f for f in TARGET_FOLDERS if f != "INBOX"]
 
                 def pick_folder_interactively() -> str | None:
-                    """Show a numbered list of folders and return the user's pick,
-                    or None if they cancel."""
                     print()
                     for n, name in enumerate(FOLDER_CHOICES, 1):
                         print(f"    {n}. {name:15s} — {TARGET_FOLDERS[name][:55]}")
@@ -285,23 +285,40 @@ async def run(count: int, auto: bool):
                     print("  Invalid number — keeping in INBOX.")
                     return None
 
+                async def create_new_folder_interactively() -> str | None:
+                    """Ask for a name, create the folder if needed, return its name."""
+                    name = input("  New folder name: ").strip()
+                    if not name:
+                        return None
+                    # Create if it doesn't exist (tool handles the "already exists" case)
+                    result = call_text(await session.call_tool(
+                        "create_mail_folder", {"folder_name": name}
+                    ))
+                    print(f"  {result}")
+                    # Register it so the picker and rules know about it
+                    if name not in TARGET_FOLDERS:
+                        TARGET_FOLDERS[name] = f"Custom folder: {name}"
+                        FOLDER_CHOICES.append(name)
+                    return name
+
                 if auto:
                     do_move = folder != "INBOX"
                     correction = folder
                 else:
                     if folder == "INBOX":
-                        prompt = "  Proposed: leave in INBOX. Move somewhere? [Enter=keep / f=pick folder / s=skip]: "
+                        prompt = "  Proposed: leave in INBOX. Move somewhere? [Enter=keep / f=list / n=new folder / s=skip]: "
                     else:
-                        prompt = f"  Move to '{folder}'? [y / f=pick folder / Enter=keep in INBOX / s=skip]: "
+                        prompt = f"  Move to '{folder}'? [y / f=list / n=new folder / Enter=keep in INBOX / s=skip]: "
 
                     raw = input(prompt).strip().lower()
 
                     if raw == "f":
                         picked = pick_folder_interactively()
-                        if picked:
-                            raw = picked
-                        else:
-                            raw = ""  # treat as "keep in INBOX"
+                        raw = picked if picked else ""
+
+                    elif raw == "n":
+                        picked = await create_new_folder_interactively()
+                        raw = picked if picked else ""
 
                     if raw == "s":
                         do_move = False
@@ -316,7 +333,7 @@ async def run(count: int, auto: bool):
                     else:
                         correction = raw.strip()
                         if correction not in TARGET_FOLDERS:
-                            print(f"  Unknown folder '{correction}'. Type 'f' to see the list.")
+                            print(f"  Unknown folder '{correction}'. Type 'f' to list or 'n' to create.")
                             do_move = False
                             correction = None
                             skipped += 1
@@ -334,8 +351,41 @@ async def run(count: int, auto: bool):
                     moved += 1
                     rules["sender_rules"][domain] = correction
                     save_rules(rules)
+
+                    # --- Offer to bulk-move all other messages from same sender ---
+                    bulk = input(
+                        f"  Move ALL other '{domain}' messages in INBOX to '{correction}'? [y/N]: "
+                    ).strip().lower()
+                    if bulk == "y":
+                        others_text = call_text(await session.call_tool(
+                            "search_messages_by_sender",
+                            {"sender_pattern": domain, "folder": "INBOX", "count": 100},
+                        ))
+                        others = parse_listing(others_text)
+                        # Exclude the message we already moved (it's gone from INBOX now)
+                        others = [m for m in others if m["id"] != msg["id"]]
+                        if not others:
+                            print(f"  No other '{domain}' messages found in INBOX.")
+                        else:
+                            print(f"  Found {len(others)} more message(s) from '{domain}':")
+                            for o in others[:5]:
+                                print(f"    {o['raw'][:90]}")
+                            if len(others) > 5:
+                                print(f"    ... and {len(others) - 5} more")
+                            confirm_bulk = input(
+                                f"  Move all {len(others)} to '{correction}'? [y/N]: "
+                            ).strip().lower()
+                            if confirm_bulk == "y":
+                                for o in others:
+                                    r = call_text(await session.call_tool(
+                                        "move_message_to_folder",
+                                        {"message_id": o["id"], "destination_folder": correction,
+                                         "source_folder": "INBOX"},
+                                    ))
+                                    print(f"    ✓ {r}")
+                                    moved += 1
+                                print(f"  Bulk move done — {len(others)} messages moved.")
                 else:
-                    # Not moved, not skipped → stays in INBOX
                     stayed += 1
                     if correction == "INBOX" and domain not in rules["sender_rules"]:
                         rules["sender_rules"][domain] = "INBOX"
@@ -367,8 +417,13 @@ def main():
         print("  y            — accept the proposed folder and move it")
         print("  Enter        — keep it in INBOX (no move)")
         print("  Newsletters  — (or any folder name) override the proposal")
+        print("  f            — show numbered folder list to pick from")
+        print("  n            — create a brand new folder and move there")
         print("  s            — skip entirely, don't learn this sender")
-        print(f"  Valid folders: {', '.join(f for f in TARGET_FOLDERS if f != 'INBOX')}\n")
+        print()
+        print("After any move you'll also be asked:")
+        print("  Move ALL other messages from the same sender? [y/N]")
+        print(f"\n  Valid folders: {', '.join(f for f in TARGET_FOLDERS if f != 'INBOX')}\n")
 
     asyncio.run(run(args.count, args.auto))
 

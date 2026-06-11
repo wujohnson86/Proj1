@@ -505,5 +505,59 @@ def peek_message(message_id: str, folder: str = "INBOX", chars: int = 400) -> st
         return f"Failed to peek at message: {e}"
 
 
+@mcp.tool()
+def search_messages_by_sender(sender_pattern: str, folder: str = "INBOX", count: int = 50) -> str:
+    """Search a folder for all messages from a sender matching a pattern.
+    Uses IMAP FROM search (substring match on the From header).
+
+    Args:
+        sender_pattern: Substring to match in the From address,
+                        e.g. "harborfreight.com" or "johnson@"
+        folder: The mailbox/folder to search in (default "INBOX")
+        count: Maximum number of matches to return, max 100 (default 50)
+    """
+    error = _missing_config()
+    if error:
+        return error
+
+    count = max(1, min(count, 100))
+
+    try:
+        conn = _connect()
+        status, _ = conn.select(folder, readonly=True)
+        if status != "OK":
+            conn.logout()
+            return f"Could not open folder '{folder}'."
+
+        status, data = conn.search(None, "FROM", f'"{sender_pattern}"')
+        if status != "OK":
+            conn.logout()
+            return f"Search failed in folder '{folder}'."
+
+        ids = data[0].split()
+        matched_ids = ids[-count:][::-1]  # newest first
+
+        lines = []
+        for msg_id in matched_ids:
+            status, msg_data = conn.fetch(msg_id, "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])")
+            if status != "OK":
+                continue
+            raw_headers = msg_data[0][1]
+            msg = email.message_from_bytes(raw_headers)
+            sender = _decode(msg.get("From", "Unknown sender"))
+            subject = _decode(msg.get("Subject", "(no subject)"))
+            date = msg.get("Date", "")
+            lines.append(f"[id {msg_id.decode()}] From: {sender} | Subject: {subject} | Date: {date}")
+
+        conn.logout()
+    except Exception as e:
+        return f"Failed to search messages: {e}"
+
+    if not lines:
+        return f"No messages from '{sender_pattern}' found in '{folder}'."
+
+    return f"Messages in '{folder}' from '{sender_pattern}':\n" + "\n".join(lines)
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")
