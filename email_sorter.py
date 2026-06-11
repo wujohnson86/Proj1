@@ -70,6 +70,8 @@ TARGET_FOLDERS = {
     "Social":      "Notifications from LinkedIn, Twitter/X, Facebook, Reddit, GitHub, or other social platforms",
     "Travel":      "Flight confirmations, hotel bookings, car rentals, itineraries, travel updates",
     "Friends":     "Personal emails from real humans — friends, family, colleagues writing personally",
+    "SPAM":        "Unsolicited junk, phishing attempts, scams, unwanted bulk email",
+    "Ham":         "Legitimate email that was misclassified as spam — move here to mark as NOT spam",
     "INBOX":       "Keep here — important, unclear, or doesn't fit any category above",
 }
 
